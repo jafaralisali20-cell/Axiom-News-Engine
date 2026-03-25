@@ -1,0 +1,10 @@
+aiohttp==3.9.5
+deep-translator==1.11.4
+Pillow>=10.2.0
+arabic-reshaper==3.0.0
+python-bidi==0.6.3
+motor>=3.6.0
+telethon==1.36.0
+pytesseract==0.3.10
+feedparser==6.0.11
+anthropic==0.21.3
