@@ -1,17 +1,14 @@
 """
-WorldNewsLi - MASTER AI ENGINE
-Full Multi-Source Integration (n8n + Claude 3.5 + Satellite + YouTube + Agencies)
-Webhook: https://newstele.app.n8n.cloud/webhook/news-bot
+Multi-Source Telegram News Engine (Zero-Latency WebSockets + RSS).
+Processes incoming breaking news -> Groq Llama-3.3-70B -> N8N -> Target Channel
 """
 import os
 import re
-import hashlib
-import io
 import asyncio
+import io
+import hashlib
 from collections import deque
 from datetime import datetime, timezone
-
-from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import aiohttp
 from aiohttp import web
@@ -19,7 +16,6 @@ from PIL import Image
 import pytesseract
 import feedparser
 from motor.motor_asyncio import AsyncIOMotorClient
-
 
 from sources import TG_CHANNELS, RSS_FEEDS, SAT_DATA, YOUTUBE_STREAMS
 from n8n_client import push_to_n8n, push_sitrep_to_n8n
@@ -31,14 +27,12 @@ BOT_START_TIME   = datetime.now(timezone.utc)
 BOT_TOKEN        = os.environ.get("BOT_TOKEN", "")
 TARGET_CHANNEL   = "@WorldNewsLi"
 N8N_WEBHOOK      = "https://newstele.app.n8n.cloud/webhook/news-bot"
-ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_API_KEY",
-    "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")
+GROQ_API_KEY     = os.environ.get("GROQ_API_KEY", "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")
 
 API_ID           = int(os.environ.get("TG_API_ID", "31030384"))
 API_HASH         = os.environ.get("TG_API_HASH", "35b04ff5fb54744d4439f3d1c41e4230")
 SESSION_STRING   = os.environ.get("SESSION_STRING", "")
 
-ai_client        = anthropic.AsyncAnthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
 print(f"[AI BOOT] WorldNewsLi Engine Online — {BOT_START_TIME.isoformat()}")
 
 # ================================================================
@@ -68,7 +62,7 @@ async def mark_processed(h: str):
         if len(_seen) > 8000: _seen.clear()
 
 # ================================================================
-# CLAUDE AI PIPELINE — Chief Satellite Military Editor
+# GROQ AI PIPELINE — Chief Satellite Military Editor
 # ================================================================
 SYSTEM_PROMPT = """
 You are the Chief Satellite Military Editor of WorldNewsLi, with a SPECIAL STRATEGIC FOCUS on IRAQ (العراق).
@@ -98,19 +92,33 @@ async def execute_ai_pipeline(
         f"OCR: {ocr_text}"
     )
 
-    if not ai_client:
+    if not GROQ_API_KEY:
         clean = re.sub(r'https?://\S+|@\w+|#\w+|<[^>]+>', '', raw_text).strip()
         return f"🔹 {clean[:120]}\n\n▪️ تفاصيل إضافية\n📡 مَصادِرُنا | {sat_info}" if len(clean) > 30 else ""
 
     try:
-        msg = await ai_client.messages.create(
-            model="claude-3-5-sonnet-20240620",
-            max_tokens=600,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": combined}]
-        )
-        result = msg.content[0].text.strip()
-        return "" if "EMPTY" in result[:10] else result
+        async with aiohttp.ClientSession() as session:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": combined}
+                ],
+                "temperature": 0.5,
+                "max_tokens": 800
+            }
+            async with session.post(url, headers=headers, json=data, timeout=15) as r:
+                resp = await r.json()
+                if r.status != 200:
+                    print(f"[GROQ ERROR] {resp}")
+                    return ""
+                result = resp["choices"][0]["message"]["content"].strip()
+                return "" if "EMPTY" in result[:10] else result
     except Exception as e:
         print(f"[AI ERROR] {e}")
         return ""
@@ -134,16 +142,27 @@ RULES: Be concise. Arabic only. Strategic NOT tactical gossip.
 """
 
 async def generate_sitrep() -> str | None:
-    if not ai_client or len(news_history) < 5: return None
+    if not GROQ_API_KEY or len(news_history) < 5: return None
     combined = "\n---\n".join(list(news_history)[-30:])
     try:
-        msg = await ai_client.messages.create(
-            model="claude-3-5-sonnet-20240620",
-            max_tokens=800,
-            system=SITREP_PROMPT,
-            messages=[{"role": "user", "content": f"NEWS DIGEST:\n{combined}"}]
-        )
-        return msg.content[0].text.strip()
+        async with aiohttp.ClientSession() as session:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": SITREP_PROMPT},
+                    {"role": "user", "content": f"NEWS DIGEST:\n{combined}"}
+                ],
+                "temperature": 0.5,
+                "max_tokens": 800
+            }
+            async with session.post(url, headers=headers, json=data, timeout=15) as r:
+                resp = await r.json()
+                return resp["choices"][0]["message"]["content"].strip()
     except: return None
 
 async def sitrep_loop(http: aiohttp.ClientSession):
@@ -184,7 +203,7 @@ async def publish_to_telegram(http: aiohttp.ClientSession, text: str) -> bool:
     except: return False
 
 # ================================================================
-# OCR — Image-to-Text
+# OCR PIPELINE
 # ================================================================
 async def extract_ocr(client: TelegramClient, msg) -> str:
     if msg.photo:
@@ -204,8 +223,7 @@ async def handle_telegram_event(
     event, client: TelegramClient, http: aiohttp.ClientSession
 ):
     msg = event.message
-   
-
+    
     raw = msg.message or ""
     # Explicitly strip t.me and http links to prevent link injection
     raw = re.sub(r'https?://(?:www\.)?t\.me/[^\s]+', '', raw)
@@ -286,12 +304,12 @@ async def rss_loop(http: aiohttp.ClientSession):
 # ================================================================
 async def health(_):
     return web.Response(
-        text="WorldNewsLi | Claude 3.5 + n8n + Nilesat | ACTIVE",
+        text="WorldNewsLi | Groq Llama-3.3 + n8n + Nilesat | ACTIVE",
         content_type="text/plain"
     )
 
 # ================================================================
-# MAIN ENTRYPOINT
+# MAIN
 # ================================================================
 async def main():
     # Telegram connection
@@ -303,7 +321,7 @@ async def main():
 
     http = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=200))
 
-    # Resolve channels via dynamic universal filtering (fixes muted/unopened channel issues)
+    # Resolve channels via dynamic universal filtering
     print("[INIT] Optimizing target channel cache for muted/live channels...")
     target_usernames = {ch.lower() for ch in TG_CHANNELS}
 
@@ -314,14 +332,14 @@ async def main():
         if username and username.lower() in target_usernames:
             await handle_telegram_event(event, client, http)
 
-    # Health server
+    # Boot Server
     app = web.Application()
-    app.router.add_get("/", health)
+    app.router.add_get('/', health)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8080))).start()
 
-    print("[PIPELINE] CLAUDE 3.5 + n8n + NILESAT ENGINE FULLY ONLINE 🚀")
+    print("[PIPELINE] GROQ LLAMA 3.3 + n8n + NILESAT ENGINE FULLY ONLINE 🚀")
     await asyncio.gather(
         client.run_until_disconnected(),
         rss_loop(http),
