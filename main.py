@@ -204,7 +204,7 @@ async def handle_telegram_event(
     event, client: TelegramClient, http: aiohttp.ClientSession
 ):
     msg = event.message
-    if not msg.date or msg.date < BOT_START_TIME: return
+   
 
     raw = msg.message or ""
     # Explicitly strip t.me and http links to prevent link injection
