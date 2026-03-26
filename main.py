@@ -19,7 +19,7 @@ from PIL import Image
 import pytesseract
 import feedparser
 from motor.motor_asyncio import AsyncIOMotorClient
-import anthropic
+
 
 from sources import TG_CHANNELS, RSS_FEEDS, SAT_DATA, YOUTUBE_STREAMS
 from n8n_client import push_to_n8n, push_sitrep_to_n8n
