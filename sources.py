@@ -8,6 +8,7 @@ Covers: YouTube, Telegram, Satellite RSS, Agencies, Facebook Mirrors
 # ================================================================
 TG_CHANNELS = [
     # ── IRAQ ──────────────────────────────────────────────────
+    "SadiqNews1007",
     "falafeliraqia",        # Iraqi news mirror
     "A_M_H1",              # Iraqi military news
     "centerkaf",           # Center Kaf political analysis
