@@ -9,6 +9,7 @@ import io
 import hashlib
 from collections import deque
 from datetime import datetime, timezone
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import aiohttp
 from aiohttp import web
