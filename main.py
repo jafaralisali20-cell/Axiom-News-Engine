@@ -32,7 +32,7 @@ BOT_TOKEN        = os.environ.get("BOT_TOKEN", "")
 TARGET_CHANNEL   = "@WorldNewsLi"
 N8N_WEBHOOK      = "https://newstele.app.n8n.cloud/webhook/news-bot"
 ANTHROPIC_KEY    = os.environ.get("ANTHROPIC_API_KEY",
-    "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")
+    "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")
 
 API_ID           = int(os.environ.get("TG_API_ID", "31030384"))
 API_HASH         = os.environ.get("TG_API_HASH", "35b04ff5fb54744d4439f3d1c41e4230")
